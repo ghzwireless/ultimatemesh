@@ -1,0 +1,129 @@
+#!/bin/sh 
+
+<<COPYRIGHT
+
+Copyright (C) 2010 Antonio Anselmi <tony.anselmi@gmail.com>
+
+This program is free software; you can redistribute it and/or
+modify it under the terms of version 2 of the GNU General Public
+License as published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this file.  If not, see <http://www.gnu.org/licenses/>.
+
+COPYRIGHT
+
+. /lib/robin/last-hop.sh
+. /etc/mydiag.sh
+
+EXIT() {
+	rm -f /var/run/speed-test.pid
+	exit 
+}
+
+download_test_file() {
+	#prevent lot of curl instances
+	p=$(ps |grep 'curl -o /tmp/dummy' |grep -v grep |awk '{print $1}')
+	while [ -n "$p" ]; do 
+     	kill -9 $p
+		p=$(ps |grep 'curl -o /tmp/dummy' |grep -v grep |awk '{print $1}')
+	done
+
+	speedtest_url=$(uci get general.services.speedtest_url)
+	(
+# TOOLCHANGE	
+#		wget -t 1  -T 20 -O /tmp/dummy "http://${curr_GATEWAY}:8080/xaa"
+		if [ "$speedtest_url" ]; then
+			curl -o /tmp/dummy --retry 1 --max-time 60 --connect-timeout 20 -s -w '%{speed_download}' "${speedtest_url}"
+		else
+			curl -o /tmp/dummy --retry 1 --max-time 60 --connect-timeout 20 -s -w '%{speed_download}' "http://${curr_GATEWAY}:80/xaa"
+		fi
+	) > /tmp/ST_res 2>&1
+
+	if [ "$?" -eq 0 ] ; then 
+		NTR=$(cat /tmp/ST_res)
+		else
+		NTR=0
+	fi
+}
+
+compute_bandwidth() {
+	# curl speed_download output in Bytes/sec. Convert to Kbits/sec.
+	bandwidth=$(echo $NTR | awk '{printf("%d\n", ($1 / 128))}')
+	logger -st ${0##*/} "current bandwidth [${curr_GATEWAY}] ${bandwidth} Kbps"
+}
+
+set_leds() {
+	local LEVEL=$1
+
+	if [ "$LEVEL" -lt 500 ] 
+		then 
+		set_led_off $red_led 
+		set_led_off $orange_led 
+		set_led_off $green_led 
+		status_led_off
+
+	elif [ "$LEVEL" -lt 1000 ] 
+		then 
+		set_led_on $red_led 
+		set_led_off $orange_led 
+		set_led_off $green_led 
+		status_led_off
+
+	elif [ "$LEVEL" -lt 2000 ]
+		then 
+		set_led_on $red_led 
+		set_led_on $orange_led
+		set_led_off $green_led 
+		status_led_off
+
+	elif [ "$LEVEL" -lt 3000 ]
+		then 
+		set_led_on $red_led 
+		set_led_on $orange_led
+		set_led_on $green_led 
+		status_led_off
+
+	elif [ "$LEVEL" -ge 3000 ]
+		then 
+		set_led_on $red_led 
+		set_led_on $orange_led
+		set_led_on $green_led 
+		status_led_on
+	fi
+}
+
+###
+[ "$(uci get node.general.role)" -eq 1 ] && exit
+
+[ -e /var/run/speed-test.pid ] && {
+	kill -9 $(cat /var/run/speed-test.pid)
+	rm -f /var/run/speed-test.pid
+}	
+echo $$ > /var/run/speed-test.pid
+
+get_status_led
+
+#should be run by update - we assume that /tmp/gateway exists
+[ -e /tmp/current_gateway ] || {
+	echo "should be run by update. Exiting" 
+	EXIT
+}
+
+#this should never happen:
+grep -q '^0' /tmp/current_gateway && EXIT
+
+curr_GATEWAY=$(cat /tmp/current_gateway | awk '{print $1}') 
+download_test_file
+echo $NTR > /tmp/current_ntr
+
+compute_bandwidth
+set_leds $bandwidth
+
+rm -f /var/run/speed-test.pid
+#
