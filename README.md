@@ -9,7 +9,7 @@ Modifications/updates to ramona branch by Benjamin West / WasabiNet <ben@gowasab
 
 License
 =======
-Copyright (C) 2010 Antonio Anselmi <tony.anselmi@gmail.com>
+Copyright (C) 2011-2017 Ultimate Mesh LLP <ultimatemesh@gmail.com>
 
 This program is free software; you can redistribute it and/or modify it under the terms of version 2 of the GNU General Public License as published by the Free Software Foundation.
 
